@@ -1,5 +1,4 @@
 import os
-import re
 import pandas as pd
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
@@ -8,12 +7,16 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 app = Flask(__name__)
 
-# --- LINE設定（環境変数から読み込むのがサーバーの鉄則です） ---
-line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
-handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
+# --- 設定（環境変数から読み込み） ---
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-BUDGET_FILE = "budget_config.txt"
-CSV_FILE = "enavi202602(3688).csv"
+# ★ここにあなたのスプレッドシートの共有URLを貼ってください
+# 例: "https://docs.google.com/spreadsheets/d/xxx/edit?usp=sharing"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1GBpmQGTcJMtwEBGHFgJ-k8kZ1Svj6b6COyKNE-q3H-k/edit?gid=0#gid=0"
+
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -28,38 +31,29 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text
-
-    # 1. 予算設定の処理
-    if "予算" in text:
+    
+    if text == "集計":
         try:
-            # 「予算 80000」から数字だけ抜く
-            amount = re.sub(r'\D', '', text)
-            with open(BUDGET_FILE, "w") as f:
-                f.write(amount)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"予算を{amount}円に設定しました！"))
-        except:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="予算設定に失敗しました。"))
-
-    # 2. 集計の処理
-    elif text == "集計":
-        if os.path.exists(CSV_FILE):
-            df = pd.read_csv(CSV_FILE, encoding='utf-8')
-            actual_payment = df['2月支払金額'].dropna().sum()
+            # スプレッドシートを読み込める形式（CSV出力形式）に変換
+            # edit?usp=sharing 以降を削って export?format=csv に差し替える
+            csv_url = SHEET_URL.split('/edit')[0] + '/export?format=csv'
             
-    budget = 50000  # もしファイルがなかった時の予備
-            if os.path.exists(BUDGET_FILE):
-                with open(BUDGET_FILE, "r") as f:
-                    content = f.read().strip()
-                    if content:  # 中身が空でなければ
-                        budget = int(content)
+            # スプレッドシートを読み込む
+            df = pd.read_csv(csv_url)
             
+            # 2列目（金額が入っている列）の合計を計算
+            # appendRowで書き込んでいる場合、通常は2列目(インデックス1)に金額が入ります
+            actual_payment = df.iloc[:, 1].sum()
+            
+            budget = 80000  # 予算（必要に応じて変更してください）
             remaining = budget - actual_payment
-            msg = f"📅 2月度集計\n設定予算：{budget:,}円\n引落予定：{int(actual_payment):,}円\n残り：{int(remaining):,}円"
+            
+            msg = f"📅 今月の利用状況\n設定予算：{budget:,}円\n現在の合計：{int(actual_payment):,}円\n残り：{int(remaining):,}円"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
-        else:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="CSVファイルがまだサーバーにありません。"))
+            
+        except Exception as e:
+            # エラーが出た場合、LINEに原因を表示（デバッグ用）
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"エラー: {e}"))
 
 if __name__ == "__main__":
-
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
