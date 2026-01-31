@@ -7,12 +7,11 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 app = Flask(__name__)
 
-# --- 設定（環境変数から読み込み） ---
+# LINEの設定
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-# ★ここにあなたのスプレッドシートの共有URLを貼ってください
-# 例: "https://docs.google.com/spreadsheets/d/xxx/edit?usp=sharing"
+# ★ここにコピーしたスプレッドシートのURLを貼ってください！
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1GBpmQGTcJMtwEBGHFgJ-k8kZ1Svj6b6COyKNE-q3H-k/edit?gid=0#gid=0"
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
@@ -34,26 +33,24 @@ def handle_message(event):
     
     if text == "集計":
         try:
-            # スプレッドシートを読み込める形式（CSV出力形式）に変換
-            # edit?usp=sharing 以降を削って export?format=csv に差し替える
+            # スプレッドシートをCSV形式で読み込む魔法のURL変換
             csv_url = SHEET_URL.split('/edit')[0] + '/export?format=csv'
             
-            # スプレッドシートを読み込む
+            # データを読み込む
             df = pd.read_csv(csv_url)
             
-            # 2列目（金額が入っている列）の合計を計算
-            # appendRowで書き込んでいる場合、通常は2列目(インデックス1)に金額が入ります
-            actual_payment = df.iloc[:, 1].sum()
+            # 金額が入っている列（通常は2列目＝index 1）の合計を計算
+            # 数値以外のゴミが混じっても大丈夫なように数値化
+            total_spent = pd.to_numeric(df.iloc[:, 1], errors='coerce').sum()
             
-            budget = 80000  # 予算（必要に応じて変更してください）
-            remaining = budget - actual_payment
+            budget = 80000  # あなたの月間予算
+            remaining = budget - total_spent
             
-            msg = f"📅 今月の利用状況\n設定予算：{budget:,}円\n現在の合計：{int(actual_payment):,}円\n残り：{int(remaining):,}円"
+            msg = f"💳 最新の利用状況\n──────────────\n設定予算：{budget:,}円\n現在の合計：{int(total_spent):,}円\n残り予算：{int(remaining):,}円"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
             
         except Exception as e:
-            # エラーが出た場合、LINEに原因を表示（デバッグ用）
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"エラー: {e}"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"データ取得エラー: {e}"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
