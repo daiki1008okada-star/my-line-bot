@@ -46,9 +46,12 @@ def handle_message(event):
             df = pd.read_csv(CSV_FILE, encoding='utf-8')
             actual_payment = df['2月支払金額'].dropna().sum()
             
-            budget = 50000
+    budget = 50000  # もしファイルがなかった時の予備
             if os.path.exists(BUDGET_FILE):
-                with open(BUDGET_FILE, "r") as f: budget = int(f.read().strip())
+                with open(BUDGET_FILE, "r") as f:
+                    content = f.read().strip()
+                    if content:  # 中身が空でなければ
+                        budget = int(content)
             
             remaining = budget - actual_payment
             msg = f"📅 2月度集計\n設定予算：{budget:,}円\n引落予定：{int(actual_payment):,}円\n残り：{int(remaining):,}円"
@@ -59,3 +62,4 @@ def handle_message(event):
 if __name__ == "__main__":
 
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
