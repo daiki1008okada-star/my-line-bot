@@ -33,24 +33,38 @@ def handle_message(event):
     
     if text == "集計":
         try:
-            # スプレッドシートをCSV形式で読み込む魔法のURL変換
+            # スプレッドシートをCSV形式で取得
             csv_url = SHEET_URL.split('/edit')[0] + '/export?format=csv'
             
-            # データを読み込む
-            df = pd.read_csv(csv_url)
+            # 見出しがない場合を考慮して、header=Noneで読み込む
+            df = pd.read_csv(csv_url, header=None)
             
-            # 金額が入っている列（通常は2列目＝index 1）の合計を計算
-            # 数値以外のゴミが混じっても大丈夫なように数値化
-            total_spent = pd.to_numeric(df.iloc[:, 1], errors='coerce').sum()
+            # 1列目(index 0)を日付として解釈
+            df[0] = pd.to_datetime(df[0], errors='coerce')
             
-            budget = 80000  # あなたの月間予算
+            # 2列目(index 1)を数値として解釈（B列）
+            df[1] = pd.to_numeric(df[1], errors='coerce')
+
+            # --- ここで「今月」の判定を柔軟にします ---
+            # 本日が1月31日の場合でも、シートの2月のデータを見たい場合は
+            # 下記のnowを「2月」として扱うか、一旦「全データ合計」でテストします
+            
+            # 【テスト用】一旦、日付を無視して「B列にある数字を全部足す」設定にします
+            total_spent = df[1].sum()
+            
+            # 【本番用（月別にする場合）】
+            # now = pd.Timestamp.now(tz='Asia/Tokyo')
+            # total_spent = df[(df[0].dt.month == now.month)][1].sum()
+
+            budget = 80000
             remaining = budget - total_spent
             
-            msg = f"💳 最新の利用状況\n──────────────\n設定予算：{budget:,}円\n現在の合計：{int(total_spent):,}円\n残り予算：{int(remaining):,}円"
+            msg = f"📊 利用状況確認\n──────────────\n設定予算：{budget:,}円\n現在の合計：{int(total_spent):,}円\n残り予算：{int(remaining):,}円"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
             
         except Exception as e:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"データ取得エラー: {e}"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"エラーが発生しました: {e}"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
